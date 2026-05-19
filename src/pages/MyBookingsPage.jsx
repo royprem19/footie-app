@@ -1,103 +1,213 @@
-import { Link } from 'react-router-dom';
-import { Ticket, MapPin, Calendar, QrCode, XCircle, Award } from 'lucide-react';
+import React, { useState } from 'react';
 import { useMatchStore } from '../store/matchStore';
-import { useAuthStore } from '../store/authStore';
-import toast from 'react-hot-toast';
+import { Calendar, History, Receipt, MapPin, IndianRupee, XCircle, QrCode } from 'lucide-react';
 
-export const MyBookingsPage = () => {
-    const { matches, playerBookings, cancelBooking } = useMatchStore();
-    const { user } = useAuthStore();
+const MyBookingsPage = () => {
+    // GOOD: Hook is safely inside the component!
+    const { matches, venues, currentUser, cancelBooking, leaveMatch } = useMatchStore();
 
-    const myMatches = matches.filter(match => playerBookings.includes(match.id));
+    const [activeTab, setActiveTab] = useState('upcoming');
+    // ...
 
-    // GAMIFICATION: Calculate player badge based on bookings
-    const getBadge = (count) => {
-        if (count >= 5) return { title: 'Turf Legend', color: 'text-yellow-400', bg: 'bg-yellow-400/10' };
-        if (count >= 3) return { title: 'Regular', color: 'text-blue-400', bg: 'bg-blue-400/10' };
-        if (count >= 1) return { title: 'Rookie', color: 'text-primary', bg: 'bg-primary/10' };
-        return { title: 'Benchwarmer', color: 'text-gray-400', bg: 'bg-gray-800' };
-    };
-    const badge = getBadge(myMatches.length);
+    // --- THE DETECTIVE TOOL ---
+    console.log("CURRENT USER CREDENTIALS:", currentUser);
+    console.log("DJANGO SENT THESE MATCHES:", matches);
+    console.log("GLOBAL DIRECTORY VENUES:", venues);
 
-    const handleCancel = (matchId) => {
-        if (window.confirm("Are you sure you want to cancel? A 50% cancellation fee applies.")) {
-            cancelBooking(matchId, user.id);
-            toast.success("Booking cancelled. Slot freed up!");
-        }
-    };
+    // 2. DYNAMIC AUTH FILTER: Filter matches that belong to your logged-in profile
+    const myAllMatches = matches.filter(match => {
+        if (!currentUser || !currentUser.username) return false;
+
+        // Did I create/host this match?
+        const isCreator = match.creator_name === currentUser.username;
+
+        // Did I join this match as a player? (Safely check the array)
+        const isPlayer = (match.player_usernames || []).includes(currentUser.username);
+
+        return isCreator || isPlayer;
+    });
+
+    // 3. Split them into Upcoming and History tabs
+    const upcomingMatches = myAllMatches.filter(m => m.status !== 'completed' && m.status !== 'cancelled');
+    const pastMatches = myAllMatches.filter(m => m.status === 'completed' || m.status === 'cancelled');
 
     return (
-        <div className="p-4 md:p-8 pb-24 animate-in fade-in duration-500">
+        <div className="min-h-screen bg-[#0a0a0a] text-white p-8">
+            <div className="max-w-4xl mx-auto">
+                <h1 className="text-3xl font-black mb-8 text-green-400">MY DASHBOARD</h1>
 
-            {/* Header & Gamification Panel */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 border-b border-gray-800 pb-6 gap-4">
-                <div>
-                    <h1 className="text-3xl font-black text-white uppercase tracking-wide">
-                        My <span className="text-primary">Bookings</span>
-                    </h1>
-                    <p className="text-gray-400 mt-2">Manage your tickets and stats.</p>
+                {/* --- THE TAB NAVIGATION --- */}
+                <div className="flex space-x-4 border-b border-gray-800 mb-6">
+                    <button
+                        onClick={() => setActiveTab('upcoming')}
+                        className={`flex items-center pb-3 px-4 font-bold transition-colors ${activeTab === 'upcoming' ? 'text-green-400 border-b-2 border-green-400' : 'text-gray-500 hover:text-white'}`}
+                    >
+                        <Calendar className="w-5 h-5 mr-2" /> Upcoming
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('history')}
+                        className={`flex items-center pb-3 px-4 font-bold transition-colors ${activeTab === 'history' ? 'text-green-400 border-b-2 border-green-400' : 'text-gray-500 hover:text-white'}`}
+                    >
+                        <History className="w-5 h-5 mr-2" /> History
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('transactions')}
+                        className={`flex items-center pb-3 px-4 font-bold transition-colors ${activeTab === 'transactions' ? 'text-green-400 border-b-2 border-green-400' : 'text-gray-500 hover:text-white'}`}
+                    >
+                        <Receipt className="w-5 h-5 mr-2" /> Transactions
+                    </button>
                 </div>
 
-                {/* Player Badge */}
-                <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-800 ${badge.bg}`}>
-                    <Award size={24} className={badge.color} />
-                    <div>
-                        <div className="text-xs text-gray-400 uppercase font-bold tracking-wider">Current Status</div>
-                        <div className={`font-black ${badge.color}`}>{badge.title} ({myMatches.length} Games)</div>
+                {/* --- TAB 1: UPCOMING MATCHES --- */}
+                {activeTab === 'upcoming' && (
+                    <div className="space-y-4">
+                        {upcomingMatches.length === 0 ? (
+                            <p className="text-gray-500">No upcoming matches scheduled.</p>
+                        ) : (
+                            upcomingMatches.map(match => {
+                                // THE FIX: Look up the real venue name and location using the match.venue relation ID
+                                const venueDetails = venues.find(v => String(v.id) === String(match.venue));
+                                const displayVenueName = venueDetails ? venueDetails.name : match.venue_name || "Premium Turf";
+                                const displayLocation = venueDetails ? venueDetails.location : match.location || "Location Directory TBD";
+                                const displayTime = match.time_slots?.length > 0 ? match.time_slots.join(', ') : "Time TBD";
+                                if (match.datetime && match.datetime.includes('T')) {
+                                    const timePart = match.datetime.split('T')[1].substring(0, 5);
+                                    let [h, m] = timePart.split(':');
+                                    let suffix = "AM";
+                                    let hourInt = parseInt(h);
+                                    if (hourInt >= 12) { suffix = "PM"; if (hourInt > 12) hourInt -= 12; }
+                                    if (hourInt === 0) hourInt = 12;
+                                    displayTime = `${hourInt.toString().padStart(2, '0')}:${m} ${suffix}`;
+                                }
+
+                                return (
+                                    <div key={match.id} className="bg-[#111] border border-gray-800 rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                        <div className="w-full">
+                                            <h3 className="text-xl font-black text-white">{displayVenueName}</h3>
+                                            <p className="text-gray-400 flex items-center mt-1 text-sm">
+                                                <MapPin className="w-4 h-4 mr-1 text-green-400" /> {displayLocation}
+                                            </p>
+
+                                            {/* TIME & DATE BUBBLES */}
+                                            <div className="flex gap-2 mt-3">
+                                                <span className="text-green-400 font-mono bg-green-900/20 px-3 py-1 rounded text-sm border border-green-900/50">
+                                                    {match.date || (match.datetime && match.datetime.split('T')[0])}
+                                                </span>
+                                                <span className="text-white font-mono bg-gray-800 px-3 py-1 rounded text-sm border border-gray-700">
+                                                    {displayTime}
+                                                </span>
+                                            </div>
+
+                                            {/* THE SECRET ENTRY PIN CODE */}
+                                            <div className="mt-4 pt-4 border-t border-gray-800 w-full max-w-sm flex justify-between items-center bg-black/40 px-4 py-2 rounded-lg border-dashed">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-bold text-gray-500 tracking-widest uppercase">Entry PIN</span>
+                                                </div>
+                                                <span className="text-lg font-black text-white tracking-widest">
+                                                    FT-{match.id.toString().padStart(4, '0')}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* THE SMART CANCEL BUTTON */}
+                                        <button
+                                            onClick={() => {
+                                                // Check if the logged-in user is the one who created the match
+                                                const isCreator = match.creator_name === currentUser.username;
+
+                                                if (isCreator) {
+                                                    // Nuclear Option: Kills the match (Private Squads / Admin Hosts)
+                                                    cancelBooking(match.id);
+                                                } else {
+                                                    // Player Option: Removes them from roster, keeps match alive for others!
+                                                    leaveMatch(match.id);
+                                                }
+                                            }}
+                                            className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white px-4 py-3 rounded-lg font-bold transition-all flex items-center shrink-0 w-full md:w-auto justify-center border border-red-500/20 hover:border-red-500"
+                                        >
+                                            <XCircle className="w-5 h-5 mr-2" />
+                                            {match.creator_name === currentUser?.username ? 'Cancel Entire Match' : 'Leave Match'}
+                                        </button>
+                                    </div>
+                                );
+                            })
+                        )}
                     </div>
-                </div>
-            </div>
+                )}
 
-            {myMatches.length === 0 ? (
-                <div className="bg-surface border border-gray-800 rounded-xl p-12 text-center shadow-lg">
-                    <Ticket size={48} className="text-gray-600 mx-auto mb-4" />
-                    <h2 className="text-xl font-bold text-white mb-2">No upcoming games</h2>
-                    <p className="text-gray-400 mb-6">Your ticket wallet is empty. Get off the bench!</p>
-                    <Link to="/matches" className="bg-primary text-black font-bold py-3 px-6 rounded-lg hover:bg-[#2ce00f] transition-colors">
-                        Find a Match
-                    </Link>
-                </div>
-            ) : (
-                <div className="grid gap-6 md:grid-cols-2">
-                    {myMatches.map(match => (
-                        <div key={match.id} className="bg-background border border-gray-700 rounded-xl overflow-hidden flex flex-col relative shadow-lg shadow-primary/5 group">
+                {/* --- TAB 2: HISTORY --- */}
+                {activeTab === 'history' && (
+                    <div className="space-y-4">
+                        {pastMatches.length === 0 ? (
+                            <p className="text-gray-500">You haven't completed any matches yet.</p>
+                        ) : (
+                            pastMatches.map(match => {
+                                const venueDetails = venues.find(v => String(v.id) === String(match.venue));
+                                const displayVenueName = venueDetails ? venueDetails.name : match.venue_name || "Premium Turf";
 
-                            <div className="flex flex-1">
-                                <div className="p-5 flex-1 border-r border-dashed border-gray-600">
-                                    <div className="bg-primary/20 text-primary text-xs font-bold px-2 py-1 rounded inline-block mb-3 uppercase tracking-wider">
-                                        Confirmed
+                                return (
+                                    <div key={match.id} className="bg-[#111] border border-gray-800 rounded-xl p-6 opacity-75">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <h3 className="text-xl font-bold text-gray-300">{displayVenueName}</h3>
+                                                <p className="text-gray-500 mt-1">{match.date}</p>
+                                            </div>
+                                            <span className={`px-3 py-1 rounded font-bold text-sm ${match.status === 'cancelled' ? 'bg-red-900/30 text-red-400' : 'bg-gray-800 text-gray-300'}`}>
+                                                {match.status.toUpperCase()}
+                                            </span>
+                                        </div>
                                     </div>
-                                    <h3 className="text-xl font-bold text-white mb-1">{match.venue_name}</h3>
-                                    <div className="text-sm text-gray-400 mb-4 flex items-center">
-                                        <MapPin size={14} className="mr-1" /> {match.location}
-                                    </div>
-                                    <div className="text-sm font-medium text-white flex items-center bg-surface p-2 rounded">
-                                        <Calendar size={16} className="mr-2 text-primary" />
-                                        {new Date(match.datetime).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                    </div>
-                                </div>
+                                );
+                            })
+                        )}
+                    </div>
+                )}
 
-                                <div className="bg-surface w-32 p-4 flex flex-col items-center justify-center relative">
-                                    <QrCode size={56} className="text-gray-400 mb-2" />
-                                    <div className="text-[10px] text-gray-500 font-mono text-center mb-2">
-                                        ID: {match.id.substring(0, 8).toUpperCase()}
-                                    </div>
-                                    <div className="absolute top-0 -left-3 w-6 h-6 bg-background rounded-full -mt-3"></div>
-                                    <div className="absolute bottom-0 -left-3 w-6 h-6 bg-background rounded-full -mb-3"></div>
-                                </div>
-                            </div>
-
-                            {/* Cancel Button Footer */}
-                            <button
-                                onClick={() => handleCancel(match.id)}
-                                className="w-full bg-danger/10 hover:bg-danger text-danger hover:text-white py-3 text-sm font-bold flex items-center justify-center transition-colors border-t border-danger/20"
-                            >
-                                <XCircle size={16} className="mr-2" /> Cancel Booking
-                            </button>
+                {/* --- TAB 3: TRANSACTIONS (RECEIPTS) --- */}
+                {activeTab === 'transactions' && (
+                    <div className="bg-[#111] border border-gray-800 rounded-xl overflow-hidden">
+                        <div className="p-4 bg-[#1a1a1a] border-b border-gray-800 grid grid-cols-4 font-bold text-gray-400">
+                            <div className="col-span-2">Description</div>
+                            <div>Date</div>
+                            <div className="text-right">Amount</div>
                         </div>
-                    ))}
-                </div>
-            )}
+                        {myAllMatches.length === 0 ? (
+                            <div className="p-6 text-gray-500">No transactions found.</div>
+                        ) : (
+                            myAllMatches.map(match => {
+                                const venueDetails = venues?.find(v => String(v.id) === String(match.venue));
+                                const displayVenueName = venueDetails ? venueDetails.name : match.venue_name || "Premium Turf";
+
+                                const isRefund = match.status === 'cancelled';
+
+                                // THE FIX: Visually add the ₹15 platform fee so it matches the database!
+                                const displayAmount = match.price_inr + 15;
+
+                                return (
+                                    <div key={match.id} className="p-4 border-b border-gray-800/50 grid grid-cols-4 items-center hover:bg-[#161616] transition-colors">
+                                        <div className="col-span-2">
+                                            <p className={`font-bold ${isRefund ? 'text-green-400' : 'text-white'}`}>
+                                                {isRefund ? 'Refund Processed' : 'Pitch Booking'}
+                                            </p>
+                                            <p className="text-sm text-gray-500">{displayVenueName}</p>
+                                        </div>
+                                        <div className="text-gray-400 font-mono text-sm">
+                                            {match.date || (match.datetime && match.datetime.split('T')[0])}
+                                        </div>
+                                        <div className={`text-right font-bold flex items-center justify-end ${isRefund ? 'text-green-400' : 'text-white'}`}>
+                                            {isRefund ? '+' : '-'} <IndianRupee className="w-4 h-4 mx-1" />
+                                            {displayAmount}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                )}
+
+            </div>
         </div>
     );
 };
+
+export default MyBookingsPage;
