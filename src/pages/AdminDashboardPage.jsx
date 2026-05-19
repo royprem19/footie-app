@@ -1,80 +1,146 @@
-import { useState } from 'react';
-import { useMatchStore } from '../store/matchStore';
+import { useState, useEffect } from 'react';
+import { useAuthStore } from '../store/authStore';
+import { useNavigate } from 'react-router-dom';
 import { X, Calendar, Activity, CheckCircle, Building, ArrowDownRight, Loader, Clock, Landmark, MapPin, Map, CalendarCheck, User, Megaphone, Shield } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export const AdminDashboardPage = () => {
-    // Pull everything from our database
-    const { matches, venues, addVenue, addMatch, withdrawals, processWithdrawal, completeMatch } = useMatchStore();
+    const { user, role, token } = useAuthStore();
+    const navigate = useNavigate();
 
     // Admin View States
     const [activeTab, setActiveTab] = useState('bookings');
+    const [data, setData] = useState({ matches: [], venues: [], users: [] });
+    const [isLoading, setIsLoading] = useState(true);
 
     // Payout Modal States
     const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
     const [withdrawAmount, setWithdrawAmount] = useState('');
     const [isWithdrawing, setIsWithdrawing] = useState(false);
+    const [localWithdrawals, setLocalWithdrawals] = useState([]); // Tracking UI withdrawals
 
-    // Financial Math
-    const totalRevenue = matches.reduce((sum, match) => sum + (match.price_inr || 0), 0);
-    const totalWithdrawn = (withdrawals || []).reduce((sum, w) => sum + w.amount, 0);
+    // --- FETCH REAL DATA FROM DJANGO ---
+    const fetchAdminData = async () => {
+        try {
+            const [matchesRes, venuesRes, usersRes] = await Promise.all([
+                fetch('http://127.0.0.1:8000/api/matches/'),
+                fetch('http://127.0.0.1:8000/api/venues/'),
+                fetch('http://127.0.0.1:8000/api/users/')
+            ]);
+
+            setData({
+                matches: await matchesRes.json(),
+                venues: await venuesRes.json(),
+                users: await usersRes.json()
+            });
+        } catch (error) {
+            console.error("Admin fetch error:", error);
+            toast.error("Failed to load platform data.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (role !== 'admin') {
+            navigate('/matches');
+            return;
+        }
+        fetchAdminData();
+    }, [role, navigate]);
+
+    // Financial Math (Using real Django data)
+    const totalRevenue = data.matches.reduce((sum, match) => {
+        if (match.status !== 'cancelled') {
+            return sum + (Number(match.price_inr) || 0) + (match.match_type === 'open' ? 0 : 15);
+        }
+        return sum;
+    }, 0);
+    const totalWithdrawn = localWithdrawals.reduce((sum, w) => sum + w.amount, 0);
     const availableBalance = totalRevenue - totalWithdrawn;
 
     // --- 1. VENUE CREATION HANDLER ---
-    const handleCreateVenue = (e) => {
+    const handleCreateVenue = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
-        addVenue({
+
+        const payload = {
             name: formData.get('name'),
             location: formData.get('location'),
-            size: formData.get('size'),
+            pitch_size: formData.get('size'), // Mapped to Django model
             price_per_hour: parseInt(formData.get('price_per_hour')),
-        });
-        e.target.reset();
-        toast.success("New turf successfully added to directory!");
+        };
+
+        try {
+            const res = await fetch('http://127.0.0.1:8000/api/venues/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                toast.success("New turf successfully added to directory!");
+                e.target.reset();
+                fetchAdminData(); // Refresh the list!
+            } else {
+                toast.error("Failed to add turf.");
+            }
+        } catch (error) {
+            toast.error("Network error.");
+        }
     };
 
     // --- 2. HOST OPEN PLAY HANDLER ---
-    // --- 2. HOST OPEN PLAY HANDLER ---
-    const handleHostOpenPlay = (e) => {
+    const handleHostOpenPlay = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
         const selectedVenueId = formData.get('venue_id');
-        const selectedVenue = venues.find(v => String(v.id) === String(selectedVenueId));
 
-        if (!selectedVenue) return toast.error("Please select a valid venue.");
+        if (!selectedVenueId) return toast.error("Please select a valid venue.");
 
-        // We must extract the exact time so it shows up in "Find Matches"
         const datetimeRaw = formData.get('datetime');
-        let dateStr = "";
-        let timeStr = "";
+        let dateStr = datetimeRaw.split('T')[0];
+        let [h, m] = datetimeRaw.split('T')[1].split(':');
+        let suffix = "AM";
+        let hourInt = parseInt(h);
+        if (hourInt >= 12) { suffix = "PM"; if (hourInt > 12) hourInt -= 12; }
+        if (hourInt === 0) hourInt = 12;
+        let timeStr = `${hourInt.toString().padStart(2, '0')}:${m} ${suffix}`;
 
-        if (datetimeRaw) {
-            dateStr = datetimeRaw.split('T')[0];
-            let [h, m] = datetimeRaw.split('T')[1].split(':');
-            let suffix = "AM";
-            let hourInt = parseInt(h);
-            if (hourInt >= 12) { suffix = "PM"; if (hourInt > 12) hourInt -= 12; }
-            if (hourInt === 0) hourInt = 12;
-            timeStr = `${hourInt.toString().padStart(2, '0')}:${m} ${suffix}`;
-        }
-
-        addMatch({
-            venue: selectedVenue.id,
-            venue_name: selectedVenue.name,
-            location: selectedVenue.location,
-            match_type: 'open',         // <-- FIX: Tells Django NOT to charge you!
+        const payload = {
+            venue: selectedVenueId,
+            match_type: 'open',
             date: dateStr,
-            datetime: datetimeRaw,
-            time_slots: [timeStr],      // <-- FIX: Makes it visible in Find Matches!
+            time_slots: [timeStr],
             total_slots: parseInt(formData.get('total_slots')),
-            filled_slots: 0,            // <-- FIX: You do not take up a slot!
             price_inr: parseInt(formData.get('price_inr')),
-        });
+        };
 
-        e.target.reset();
-        toast.success("Open Play Match blasted to the global feed!");
-        setActiveTab('bookings');
+        try {
+            const res = await fetch('http://127.0.0.1:8000/api/matches/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                toast.success("Open Play Match blasted to the global feed!");
+                e.target.reset();
+                setActiveTab('bookings');
+                fetchAdminData();
+            } else {
+                const err = await res.json();
+                toast.error(err.error || "Failed to create match.");
+            }
+        } catch (error) {
+            toast.error("Network error.");
+        }
     };
 
     // --- 3. PAYOUT HANDLER ---
@@ -87,11 +153,34 @@ export const AdminDashboardPage = () => {
         setTimeout(() => {
             setIsWithdrawing(false);
             setIsWithdrawModalOpen(false);
-            processWithdrawal(amount);
+            setLocalWithdrawals([{
+                id: Date.now(),
+                amount: amount,
+                bank: 'HDFC Bank ****4021',
+                date: new Date().toISOString(),
+                status: 'processing'
+            }, ...localWithdrawals]);
             setWithdrawAmount('');
             toast.success(`₹${amount.toLocaleString()} transfer initiated to HDFC Bank.`);
         }, 2000);
     };
+
+    // --- 4. MARK COMPLETE HANDLER ---
+    const handleCompleteMatch = async (matchId) => {
+        try {
+            // Note: If you want this to persist in Django, you need a PATCH endpoint.
+            // For now, we update it in the UI temporarily until you build the endpoint.
+            toast.success("Match archived successfully!");
+            setData(prev => ({
+                ...prev,
+                matches: prev.matches.map(m => m.id === matchId ? { ...m, status: 'completed' } : m)
+            }));
+        } catch (error) {
+            toast.error("Failed to update match.");
+        }
+    };
+
+    if (isLoading) return <div className="p-20 text-center text-primary animate-pulse font-bold tracking-widest">DECRYPTING ADMIN SECRETS...</div>;
 
     return (
         <div className="p-4 md:p-8 pb-24 animate-in fade-in duration-500 max-w-6xl mx-auto">
@@ -99,7 +188,7 @@ export const AdminDashboardPage = () => {
                 <h1 className="text-3xl font-black text-white uppercase tracking-wide">
                     Turf <span className="text-secondary">Manager</span>
                 </h1>
-                <p className="text-gray-400 mt-2">Manage your venues, view bookings, and withdraw earnings.</p>
+                <p className="text-gray-400 mt-2">Manage your venues, view bookings, and withdraw earnings. Welcome, {user?.username}.</p>
             </div>
 
             {/* Admin Tab Navigation */}
@@ -141,25 +230,20 @@ export const AdminDashboardPage = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-800">
-                                    {matches.length === 0 ? (
+                                    {data.matches.length === 0 ? (
                                         <tr><td colSpan="6" className="text-center py-12 text-gray-500 border-dashed border-gray-800 border">No bookings yet.</td></tr>
-                                    ) : matches.map((booking) => {
-                                        const hasPipe = booking.datetime?.includes('|');
-                                        const displayDate = hasPipe ? booking.datetime.split(' | ')[0] : (booking.date || (booking.datetime && booking.datetime.split('T')[0]));
+                                    ) : data.matches.map((booking) => {
+                                        const displayDate = booking.date || (booking.datetime && booking.datetime.split('T')[0]);
                                         const displayTime = booking.time_slots?.length > 0 ? booking.time_slots.join(', ') : 'Open Schedule';
                                         const isPrivate = booking.match_type === 'private';
 
-                                        // THE FIX: Smart Venue Lookup!
-                                        const venueDetails = venues?.find(v => String(v.id) === String(booking.venue));
+                                        const venueDetails = data.venues?.find(v => String(v.id) === String(booking.venue));
                                         const displayVenueName = venueDetails ? venueDetails.name : booking.venue_name || "Premium Turf";
 
                                         return (
                                             <tr key={booking.id} className="hover:bg-gray-800/30 transition-colors">
-                                                <td className="px-6 py-4 font-mono text-xs text-gray-500">{booking.id}</td>
-
-                                                {/* THE FIX: Show real venue name */}
+                                                <td className="px-6 py-4 font-mono text-xs text-gray-500">#{String(booking.id).padStart(4, '0')}</td>
                                                 <td className="px-6 py-4 font-bold text-white">{displayVenueName}</td>
-
                                                 <td className="px-6 py-4">
                                                     <div className="text-primary font-bold">{displayDate}</div>
                                                     <div className="text-xs text-gray-500 mt-1">{displayTime}</div>
@@ -172,27 +256,15 @@ export const AdminDashboardPage = () => {
                                                     )}
                                                 </td>
                                                 <td className="px-6 py-4 text-right font-black text-white">
-                                                    ₹{isPrivate ? booking.price_inr : (booking.price_inr * (booking.filled_slots || 0))}
+                                                    ₹{isPrivate ? (booking.price_inr + 15) : (booking.price_inr * (booking.filled_slots || 0))}
                                                 </td>
-
-                                                {/* THE FIX: Cancelled Match UI Badge */}
                                                 <td className="px-6 py-4 text-right">
                                                     {booking.status === 'completed' ? (
-                                                        <span className="text-xs font-bold text-gray-500 uppercase flex items-center justify-end">
-                                                            <CheckCircle size={14} className="mr-1" /> Done
-                                                        </span>
+                                                        <span className="text-xs font-bold text-gray-500 uppercase flex items-center justify-end"><CheckCircle size={14} className="mr-1" /> Done</span>
                                                     ) : booking.status === 'cancelled' ? (
-                                                        <span className="text-xs font-bold text-red-500 uppercase flex items-center justify-end">
-                                                            <X size={14} className="mr-1" /> Cancelled
-                                                        </span>
+                                                        <span className="text-xs font-bold text-red-500 uppercase flex items-center justify-end"><X size={14} className="mr-1" /> Cancelled</span>
                                                     ) : (
-                                                        <button
-                                                            onClick={() => {
-                                                                completeMatch(booking.id);
-                                                                toast.success("Match archived successfully!");
-                                                            }}
-                                                            className="bg-gray-800 hover:bg-primary/20 text-gray-300 hover:text-primary border border-gray-700 hover:border-primary px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap active:scale-95"
-                                                        >
+                                                        <button onClick={() => handleCompleteMatch(booking.id)} className="bg-gray-800 hover:bg-primary/20 text-gray-300 hover:text-primary border border-gray-700 hover:border-primary px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap active:scale-95">
                                                             Mark Complete
                                                         </button>
                                                     )}
@@ -214,9 +286,7 @@ export const AdminDashboardPage = () => {
                         <div className="bg-surface border border-gray-800 rounded-2xl p-8 shadow-lg">
                             <Megaphone size={40} className="text-secondary mb-4" />
                             <h2 className="text-2xl font-black text-white mb-2">Turn Dead Hours into Profit</h2>
-                            <p className="text-gray-400 leading-relaxed mb-6">
-                                Got an empty pitch on Tuesday afternoon? Host a discounted public match. Solo players in your city will get a notification to buy individual tickets, filling your turf automatically.
-                            </p>
+                            <p className="text-gray-400 leading-relaxed mb-6">Got an empty pitch on Tuesday afternoon? Host a discounted public match. Solo players in your city will get a notification to buy individual tickets, filling your turf automatically.</p>
                             <div className="bg-background border border-gray-800 p-4 rounded-xl">
                                 <div className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-2">How it works</div>
                                 <ul className="text-sm text-gray-400 space-y-2">
@@ -237,7 +307,7 @@ export const AdminDashboardPage = () => {
                                 <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1 font-bold">Select Your Turf</label>
                                 <select required name="venue_id" className="w-full bg-background border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-secondary transition-colors cursor-pointer">
                                     <option value="">-- Choose a Venue --</option>
-                                    {venues?.map(v => (
+                                    {data.venues?.map(v => (
                                         <option key={v.id} value={v.id}>{v.name} ({v.location})</option>
                                     ))}
                                 </select>
@@ -272,10 +342,12 @@ export const AdminDashboardPage = () => {
                 <div className="animate-in fade-in duration-300 grid lg:grid-cols-12 gap-8">
                     <div className="lg:col-span-7">
                         <h2 className="text-xl font-bold text-white mb-6 flex items-center">
-                            <span className="w-2 h-6 bg-primary mr-3 rounded-full"></span>Active Turfs ({venues?.length || 0})
+                            <span className="w-2 h-6 bg-primary mr-3 rounded-full"></span>Active Turfs ({data.venues?.length || 0})
                         </h2>
                         <div className="space-y-4">
-                            {venues?.map(venue => (
+                            {data.venues?.length === 0 ? (
+                                <div className="p-8 border border-dashed border-gray-800 rounded-2xl text-center text-gray-500">No turfs created yet. Use the form to add one.</div>
+                            ) : data.venues?.map(venue => (
                                 <div key={venue.id} className="bg-surface border border-gray-800 rounded-2xl p-6 shadow-lg flex justify-between items-center group hover:border-gray-600 transition-all">
                                     <div>
                                         <h3 className="text-xl font-black text-white">{venue.name}</h3>
@@ -283,7 +355,7 @@ export const AdminDashboardPage = () => {
                                             <MapPin size={14} className="mr-1 text-primary" /> {venue.location}
                                         </div>
                                         <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mt-3 bg-background border border-gray-800 inline-block px-3 py-1 rounded-lg">
-                                            {venue.pitch_size || venue.size || '5v5 Only'}
+                                            {venue.pitch_size || '5v5 Only'}
                                         </div>
                                     </div>
                                     <div className="text-right">
@@ -337,13 +409,13 @@ export const AdminDashboardPage = () => {
                                 <span className="text-4xl mr-2 text-gray-500">₹</span>{availableBalance.toLocaleString()}
                             </div>
                             <div className="text-xs text-gray-500 mb-8">Lifetime Earnings: ₹{totalRevenue.toLocaleString()}</div>
-                            <button onClick={() => setIsWithdrawModalOpen(true)} disabled={availableBalance === 0} className="w-full md:w-auto px-8 bg-secondary text-black font-bold py-4 rounded-xl hover:bg-[#00cce6] transition-all flex items-center justify-center gap-2 mx-auto disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 shadow-lg">
+                            <button onClick={() => setIsWithdrawModalOpen(true)} disabled={availableBalance <= 0} className="w-full md:w-auto px-8 bg-secondary text-black font-bold py-4 rounded-xl hover:bg-[#00cce6] transition-all flex items-center justify-center gap-2 mx-auto disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 shadow-lg">
                                 <Landmark size={20} /> Withdraw Funds
                             </button>
                         </div>
                         <h3 className="text-lg font-bold text-white mb-4">Recent Settlements</h3>
                         <div className="space-y-3">
-                            {withdrawals && withdrawals.map((w) => (
+                            {localWithdrawals.map((w) => (
                                 <div key={w.id} className="bg-background border border-gray-800 rounded-xl p-4 flex justify-between items-center">
                                     <div className="flex items-center gap-4">
                                         <div className={`p-3 rounded-xl ${w.status === 'processing' ? 'bg-yellow-500/10 text-yellow-500' : 'bg-gray-800 text-gray-400'}`}>
@@ -359,6 +431,7 @@ export const AdminDashboardPage = () => {
                                     <div className="font-bold text-white">- ₹{w.amount.toLocaleString()}</div>
                                 </div>
                             ))}
+                            {localWithdrawals.length === 0 && <div className="text-center text-gray-500">No recent withdrawals.</div>}
                         </div>
                     </div>
                 </div>

@@ -1,43 +1,46 @@
-import { useState } from 'react';
-import { useMatchStore } from '../store/matchStore'; // Switched to our real Django store!
-import { Trophy, Activity, Save, Award, MessageSquare, CreditCard, Settings, User, Bell, IndianRupee, Receipt } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useMatchStore } from '../store/matchStore';
+import { useAuthStore } from '../store/authStore'; // THE FIX: Import the new Auth Store!
+import { Trophy, Activity, Save, Award, MessageSquare, CreditCard, Settings, User as UserIcon, Bell, IndianRupee, Receipt } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const AVATAR_OPTIONS = ['⚽', '🔥', '⚡', '🦅', '🎯', '🧱', '🏃‍♂️', '🧠', '💼'];
 
 export const ProfilePage = () => {
-    // 1. Pull the real data from Django JWT Store
-    const { currentUser, matches } = useMatchStore();
+    // 1. Pull the REAL user data from our JWT Auth Store!
+    const { user, profile, role, updateProfile } = useAuthStore();
+    const { matches } = useMatchStore();
 
-    // 2. Determine role dynamically based on the Django admin flag
-    const role = currentUser?.isAdmin ? 'admin' : 'player';
-
-    // 3. Set default tabs based on role
+    // 2. Set default tabs based on role
     const [activeTab, setActiveTab] = useState(role === 'admin' ? 'settings' : 'identity');
 
-    // (Note: These profile fields are currently local-only. We can add a Django UserProfile model for them later!)
-    const [position, setPosition] = useState('Striker');
-    const [level, setLevel] = useState('Intermediate');
-    const [avatar, setAvatar] = useState(role === 'admin' ? '💼' : '⚽');
-    const [bio, setBio] = useState('');
+    // 3. Initialize forms using the real Django data!
+    const [position, setPosition] = useState(profile?.position || 'Striker');
+    const [level, setLevel] = useState(profile?.level || 'Intermediate');
+    const [avatar, setAvatar] = useState(profile?.avatar || '⚽');
+    const [bio, setBio] = useState(profile?.bio || '');
 
-    // 4. Safely calculate Wallet stats using our strict match filter
+    // 4. Safely calculate Wallet stats using our real username
     const myMatches = matches.filter(match =>
-        currentUser && match.creator_name === currentUser.username
+        user && match.creator_name === user.username
     );
     const totalSpent = myMatches.reduce((sum, match) => sum + Number(match.price_inr || 0), 0);
 
-    const getBadge = (count) => {
-        if (count >= 5) return { title: 'Turf Legend', color: 'text-yellow-400', bg: 'bg-yellow-400/10' };
-        if (count >= 3) return { title: 'Regular', color: 'text-blue-400', bg: 'bg-blue-400/10' };
-        if (count >= 1) return { title: 'Rookie', color: 'text-primary', bg: 'bg-primary/10' };
-        return { title: 'Benchwarmer', color: 'text-gray-400', bg: 'bg-gray-800' };
+    // THE FIX: Style the badge based on the real Django Title!
+    const getBadgeStyle = (title) => {
+        if (title === 'Turf Legend') return { color: 'text-yellow-400', bg: 'bg-yellow-400/10' };
+        if (title === 'Regular') return { color: 'text-blue-400', bg: 'bg-blue-400/10' };
+        if (title === 'Rookie') return { color: 'text-primary', bg: 'bg-primary/10' };
+        return { color: 'text-gray-400', bg: 'bg-gray-800' };
     };
-    const badge = getBadge(myMatches.length);
+    const badgeStyle = getBadgeStyle(profile?.title || 'Rookie');
 
     const handleSaveIdentity = (e) => {
         e.preventDefault();
-        toast.success('Identity updated locally!');
+        // Update the frontend store instantly
+        updateProfile({ position, level, avatar, bio });
+        // NOTE: In the next step, we will make this hit a Django PUT endpoint to save permanently!
+        toast.success('Identity updated!');
     };
 
     const handleSaveSettings = (e) => {
@@ -46,7 +49,7 @@ export const ProfilePage = () => {
     };
 
     // 5. Block unauthenticated visitors
-    if (!currentUser) return <div className="p-20 text-center text-gray-400">Please log in to view your profile.</div>;
+    if (!user) return <div className="p-20 text-center text-gray-400">Please log in to view your profile.</div>;
 
     return (
         <div className="p-4 md:p-8 animate-in fade-in duration-500 max-w-4xl mx-auto pb-24">
@@ -56,23 +59,25 @@ export const ProfilePage = () => {
                 <div className="bg-gray-800 h-24 relative">
                     <div className="absolute -bottom-10 left-6">
                         <div className="h-20 w-20 bg-background border-4 border-surface rounded-full flex items-center justify-center text-4xl shadow-lg">
-                            {avatar}
+                            {/* THE FIX: Show the live Avatar */}
+                            {profile?.avatar || avatar}
                         </div>
                     </div>
                 </div>
 
                 <div className="pt-14 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
-                        <h2 className="text-2xl font-bold text-white">{currentUser.username}</h2>
-                        <p className="text-sm text-gray-500 italic">"{bio || (role === 'admin' ? 'Turf Manager' : 'Ready for kickoff.')}"</p>
+                        <h2 className="text-2xl font-bold text-white">{user.username}</h2>
+                        <p className="text-sm text-gray-500 italic">"{profile?.bio || bio}"</p>
                     </div>
 
                     {role === 'player' && (
-                        <div className={`flex items-center gap-3 px-4 py-2 rounded-xl border border-gray-800 ${badge.bg}`}>
-                            <Award size={20} className={badge.color} />
+                        <div className={`flex items-center gap-3 px-4 py-2 rounded-xl border border-gray-800 ${badgeStyle.bg}`}>
+                            <Award size={20} className={badgeStyle.color} />
                             <div>
                                 <div className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">Status</div>
-                                <div className={`font-black text-sm ${badge.color}`}>{badge.title} ({myMatches.length} Caps)</div>
+                                {/* THE FIX: Use real Django Caps and Title */}
+                                <div className={`font-black text-sm ${badgeStyle.color}`}>{profile?.title} ({profile?.caps} Caps)</div>
                             </div>
                         </div>
                     )}
@@ -84,7 +89,7 @@ export const ProfilePage = () => {
                 {role === 'player' && (
                     <>
                         <button onClick={() => setActiveTab('identity')} className={`flex items-center gap-2 px-6 py-3 rounded-t-lg font-bold text-sm transition-all whitespace-nowrap ${activeTab === 'identity' ? 'bg-surface text-primary border-b-2 border-primary' : 'text-gray-500 hover:text-white'}`}>
-                            <User size={18} /> Player Identity
+                            <UserIcon size={18} /> Player Identity
                         </button>
                         <button onClick={() => setActiveTab('wallet')} className={`flex items-center gap-2 px-6 py-3 rounded-t-lg font-bold text-sm transition-all whitespace-nowrap ${activeTab === 'wallet' ? 'bg-surface text-primary border-b-2 border-primary' : 'text-gray-500 hover:text-white'}`}>
                             <CreditCard size={18} /> Wallet & History
@@ -169,7 +174,6 @@ export const ProfilePage = () => {
                         ) : (
                             <div className="space-y-3">
                                 {myMatches.map(match => {
-                                    // THE FIX: Detect if the match was cancelled!
                                     const isRefund = match.status === 'cancelled';
                                     const displayVenueName = match.venue_name || "Premium Turf";
 
@@ -185,7 +189,7 @@ export const ProfilePage = () => {
                                             </div>
                                             <div className="text-right">
                                                 <div className={`font-bold text-sm ${isRefund ? 'text-green-400' : 'text-red-500'}`}>
-                                                    {isRefund ? '+' : '-'} ₹{match.price_inr}
+                                                    {isRefund ? '+' : '-'} ₹{match.price_inr + 15 /* Added platform fee! */}
                                                 </div>
                                                 <div className={`text-[10px] uppercase font-bold mt-1 ${isRefund ? 'text-green-500' : 'text-gray-500'}`}>
                                                     {isRefund ? 'Refunded' : 'Successful'}
@@ -209,12 +213,12 @@ export const ProfilePage = () => {
                             <div className="grid md:grid-cols-2 gap-6">
                                 <div>
                                     <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2 font-bold">Username</label>
-                                    <input type="text" disabled defaultValue={currentUser.username} className="w-full bg-background/50 border border-gray-800 text-gray-500 rounded-lg py-3 px-4 cursor-not-allowed" />
+                                    <input type="text" disabled defaultValue={user.username} className="w-full bg-background/50 border border-gray-800 text-gray-500 rounded-lg py-3 px-4 cursor-not-allowed" />
                                     <p className="text-[10px] text-gray-500 mt-1">Username is locked.</p>
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2 font-bold">Phone Number</label>
-                                    <input type="tel" placeholder="+91 98765 43210" className="w-full bg-background border border-gray-700 rounded-lg py-3 px-4 text-white focus:outline-none focus:border-primary transition-colors" />
+                                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2 font-bold">Email Address</label>
+                                    <input type="email" placeholder="player@footie.com" className="w-full bg-background border border-gray-700 rounded-lg py-3 px-4 text-white focus:outline-none focus:border-primary transition-colors" />
                                 </div>
                             </div>
 
@@ -227,13 +231,6 @@ export const ProfilePage = () => {
                                             <div className="text-xs text-gray-500 mt-1">{role === 'admin' ? 'Get alerts when players book slots.' : 'Get match reminders and receipts.'}</div>
                                         </div>
                                         <input type="checkbox" defaultChecked className="w-5 h-5 accent-primary cursor-pointer" />
-                                    </label>
-                                    <label className="flex items-center justify-between p-4 bg-background border border-gray-800 rounded-xl cursor-pointer hover:border-gray-600 transition-colors">
-                                        <div>
-                                            <div className="text-sm font-bold text-white">WhatsApp Alerts</div>
-                                            <div className="text-xs text-gray-500 mt-1">Instant updates for important platform activity.</div>
-                                        </div>
-                                        <input type="checkbox" className="w-5 h-5 accent-primary cursor-pointer" />
                                     </label>
                                 </div>
                             </div>

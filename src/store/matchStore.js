@@ -17,7 +17,7 @@ export const useMatchStore = create(
             // --- 2. AUTHENTICATION ACTIONS ---
             login: async (username, password) => {
                 try {
-                    const res = await fetch('http://127.0.0.1:8000/api/auth/login/', {
+                    const res = await fetch('https://footie-backend.onrender.com/api/auth/login/', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ username, password })
@@ -56,16 +56,16 @@ export const useMatchStore = create(
                 const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
 
                 try {
-                    const venueRes = await fetch('http://127.0.0.1:8000/api/venues/', { headers });
+                    const venueRes = await fetch('https://footie-backend.onrender.com/api/venues/', { headers });
                     const liveVenues = await venueRes.json();
 
-                    const matchRes = await fetch('http://127.0.0.1:8000/api/matches/', { headers });
+                    const matchRes = await fetch('https://footie-backend.onrender.com/api/matches/', { headers });
                     const liveMatches = await matchRes.json();
 
-                    const userRes = await fetch('http://127.0.0.1:8000/api/users/', { headers });
+                    const userRes = await fetch('https://footie-backend.onrender.com/api/users/', { headers });
                     const liveUsers = await userRes.json();
 
-                    const squadRes = await fetch('http://127.0.0.1:8000/api/squads/', { headers });
+                    const squadRes = await fetch('https://footie-backend.onrender.com/api/squads/', { headers });
                     const liveSquads = await squadRes.json();
 
                     set({
@@ -82,7 +82,7 @@ export const useMatchStore = create(
             bookMatch: async (matchId) => {
                 try {
                     const token = get().token; // Get token from state, not localstorage directly to be safe
-                    const res = await fetch(`http://127.0.0.1:8000/api/matches/${matchId}/join/`, {
+                    const res = await fetch(`https://footie-backend.onrender.com/api/matches/${matchId}/join/`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -132,7 +132,7 @@ export const useMatchStore = create(
                 };
 
                 try {
-                    const response = await fetch('http://127.0.0.1:8000/api/matches/', {
+                    const response = await fetch('https://footie-backend.onrender.com/api/matches/', {
                         method: 'POST',
                         headers: headers,
                         body: JSON.stringify(payload)
@@ -157,7 +157,7 @@ export const useMatchStore = create(
                 if (token) headers['Authorization'] = `Bearer ${token}`;
 
                 try {
-                    const response = await fetch('http://127.0.0.1:8000/api/venues/', {
+                    const response = await fetch('https://footie-backend.onrender.com/api/venues/', {
                         method: 'POST',
                         headers: headers,
                         body: JSON.stringify({
@@ -192,7 +192,7 @@ export const useMatchStore = create(
                 if (token) headers['Authorization'] = `Bearer ${token}`;
 
                 try {
-                    const response = await fetch('http://127.0.0.1:8000/api/matches/', {
+                    const response = await fetch('https://footie-backend.onrender.com/api/matches/', {
                         method: 'POST',
                         headers: headers,
                         body: JSON.stringify(matchData)
@@ -217,7 +217,7 @@ export const useMatchStore = create(
                 if (token) headers['Authorization'] = `Bearer ${token}`;
 
                 try {
-                    const response = await fetch('http://127.0.0.1:8000/api/squads/', {
+                    const response = await fetch('https://footie-backend.onrender.com/api/squads/', {
                         method: 'POST',
                         headers: headers,
                         body: JSON.stringify({ name: squadName })
@@ -241,7 +241,7 @@ export const useMatchStore = create(
                 const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
 
                 try {
-                    const response = await fetch(`http://127.0.0.1:8000/api/matches/${matchId}/`, {
+                    const response = await fetch(`https://footie-backend.onrender.com/api/matches/${matchId}/`, {
                         method: 'DELETE',
                         headers: headers
                     });
@@ -259,7 +259,7 @@ export const useMatchStore = create(
             leaveMatch: async (matchId) => {
                 const token = get().token;
                 try {
-                    const response = await fetch(`http://127.0.0.1:8000/api/matches/${matchId}/leave/`, {
+                    const response = await fetch(`https://footie-backend.onrender.com/api/matches/${matchId}/leave/`, {
                         method: 'POST',
                         headers: {
                             'Authorization': `Bearer ${token}`,
@@ -283,7 +283,7 @@ export const useMatchStore = create(
             completeMatch: async (matchId) => {
                 const token = get().token;
                 try {
-                    const response = await fetch(`http://127.0.0.1:8000/api/matches/${matchId}/`, {
+                    const response = await fetch(`https://footie-backend.onrender.com/api/matches/${matchId}/`, {
                         method: 'PATCH',
                         headers: {
                             'Content-Type': 'application/json',

@@ -5,49 +5,56 @@ import { Mail, Lock, User, ArrowRight, UserPlus, LogIn } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export const LoginPage = () => {
-    const { loginAsPlayer, loginAsAdmin } = useAuthStore();
+    // THE FIX: Pull the REAL async functions from our Zustand store
+    const { login, register } = useAuthStore();
     const navigate = useNavigate();
 
-    // State to track which mode we are in
     const [isSignUp, setIsSignUp] = useState(false);
 
-    // Form State
-    const [name, setName] = useState('');
+    // Form State (Aligned with Django expectations)
+    const [username, setUsername] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
 
         // Validation
-        if (isSignUp && !name) {
-            toast.error("Please tell us your name!");
+        if (!username || !password) {
+            toast.error("Please fill in all required fields!");
             return;
         }
-        if (!email || !password) {
-            toast.error("Please fill in all fields!");
+        if (isSignUp && !email) {
+            toast.error("An email is required to register!");
             return;
         }
 
-        // Fake Backend Logic
-        if (email.toLowerCase() === 'admin@footie.com') {
-            loginAsAdmin();
-            toast.success("Welcome back to the dashboard, Admin!");
-            navigate('/admin');
-        } else {
-            // If signing up, pass the name. If signing in, pass a fallback or just extract from email for the mockup.
-            const displayFullName = isSignUp ? name : (email.split('@')[0] || "Player");
-            loginAsPlayer(displayFullName);
-            toast.success(isSignUp ? "Account created successfully!" : "Welcome back to FOOTIE!");
-            navigate('/matches');
+        setIsLoading(true);
+
+        try {
+            if (isSignUp) {
+                // REAL REGISTRATION
+                const success = await register(username, password, email);
+                if (success) navigate('/profile');
+            } else {
+                // REAL LOGIN
+                const success = await login(username, password);
+                if (success) {
+                    // Check if they are an admin to route them correctly
+                    const isManager = username.toLowerCase().includes('admin');
+                    navigate(isManager ? '/admin' : '/profile');
+                }
+            }
+        } finally {
+            setIsLoading(false);
         }
     };
 
     const toggleMode = () => {
         setIsSignUp(!isSignUp);
-        setName('');
         setPassword('');
-        // Keep the email if they already typed it!
+        // Keep the username/email if they already typed it!
     };
 
     return (
@@ -73,37 +80,37 @@ export const LoginPage = () => {
 
                 <form onSubmit={handleSubmit} className="space-y-5">
 
-                    {/* Name Input (ONLY VISIBLE ON SIGN UP) */}
+                    {/* Username Input (USED FOR BOTH) */}
+                    <div>
+                        <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Username</label>
+                        <div className="relative">
+                            <User size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                            <input
+                                type="text"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                                placeholder="player123"
+                                className="w-full bg-background border border-gray-700 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-primary transition-colors"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Email Input (ONLY VISIBLE ON SIGN UP) */}
                     {isSignUp && (
                         <div className="animate-in slide-in-from-top-4 fade-in duration-300">
-                            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Full Name</label>
+                            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Email Address</label>
                             <div className="relative">
-                                <User size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                                <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
                                 <input
-                                    type="text"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    placeholder="Lionel Messi"
+                                    type="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    placeholder="player@example.com"
                                     className="w-full bg-background border border-gray-700 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-primary transition-colors"
                                 />
                             </div>
                         </div>
                     )}
-
-                    {/* Email Input */}
-                    <div>
-                        <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Email Address</label>
-                        <div className="relative">
-                            <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                            <input
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                placeholder="player@example.com"
-                                className="w-full bg-background border border-gray-700 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-primary transition-colors"
-                            />
-                        </div>
-                    </div>
 
                     {/* Password Input */}
                     <div>
@@ -123,18 +130,19 @@ export const LoginPage = () => {
                     {/* Submit Button */}
                     <button
                         type="submit"
-                        className="w-full flex items-center justify-center gap-2 bg-primary text-black font-bold py-3 rounded-lg hover:bg-[#2ce00f] transition-all hover:scale-[1.02] active:scale-[0.98] mt-4"
+                        disabled={isLoading}
+                        className="w-full flex items-center justify-center gap-2 bg-primary text-black font-bold py-3 rounded-lg hover:bg-[#2ce00f] transition-all hover:scale-[1.02] active:scale-[0.98] mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {isSignUp ? 'Create Account' : 'Sign In'} <ArrowRight size={18} />
+                        {isLoading ? 'Processing...' : (isSignUp ? 'Create Account' : 'Sign In')} <ArrowRight size={18} />
                     </button>
                 </form>
 
                 {/* Mode Toggle Footer */}
                 <div className="mt-6 pt-6 border-t border-gray-800 text-sm text-center text-gray-400">
                     {isSignUp ? (
-                        <p>Already have an account? <button onClick={toggleMode} className="text-primary font-bold hover:underline">Sign In</button></p>
+                        <p>Already have an account? <button onClick={toggleMode} type="button" className="text-primary font-bold hover:underline">Sign In</button></p>
                     ) : (
-                        <p>Don't have an account? <button onClick={toggleMode} className="text-primary font-bold hover:underline">Sign Up</button></p>
+                        <p>Don't have an account? <button onClick={toggleMode} type="button" className="text-primary font-bold hover:underline">Sign Up</button></p>
                     )}
                 </div>
 
