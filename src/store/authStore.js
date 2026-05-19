@@ -20,7 +20,7 @@ export const useAuthStore = create(
             // 1. REAL LOGIN FUNCTION
             login: async (username, password) => {
                 try {
-                    const res = await fetch('http://127.0.0.1:8000/api/auth/login/', {
+                    const res = await fetch('https://footie-backend.onrender.com/api/auth/login/', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ username, password })
@@ -63,7 +63,7 @@ export const useAuthStore = create(
             // 2. REAL REGISTER FUNCTION
             register: async (username, password, email) => {
                 try {
-                    const res = await fetch('http://127.0.0.1:8000/api/auth/register/', {
+                    const res = await fetch('https://footie-backend.onrender.com/api/auth/register/', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ username, password, email })
