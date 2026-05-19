@@ -69,7 +69,7 @@ const MyBookingsPage = () => {
                                 const venueDetails = venues.find(v => String(v.id) === String(match.venue));
                                 const displayVenueName = venueDetails ? venueDetails.name : match.venue_name || "Premium Turf";
                                 const displayLocation = venueDetails ? venueDetails.location : match.location || "Location Directory TBD";
-                                const displayTime = match.time_slots?.length > 0 ? match.time_slots.join(', ') : "Time TBD";
+                                let displayTime = match.time_slots?.length > 0 ? match.time_slots.join(', ') : "Time TBD";
                                 if (match.datetime && match.datetime.includes('T')) {
                                     const timePart = match.datetime.split('T')[1].substring(0, 5);
                                     let [h, m] = timePart.split(':');
